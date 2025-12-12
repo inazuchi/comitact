@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ComiTact v16</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Base & Reset */
+        body { 
+            font-family: 'Helvetica Neue', Arial, sans-serif; 
+            background-color: #f3f4f6; 
+            user-select: none; overscroll-behavior: none; touch-action: none;
+            height: 100vh; height: 100dvh;
+        }
+        .safe-area-pb { padding-bottom: env(safe-area-inset-bottom, 20px); }
+
+        /* Colors & Styles */
+        .status-bought { background-color: #e0f2fe !important; border-left: 5px solid #0ea5e9 !important; }
+        .status-failed { background-color: #f3f4f6 !important; border-left: 5px solid #9ca3af !important; color: #9ca3af; }
+        .status-pending { background-color: white; border-left: 5px solid #f97316; }
+        .status-priority { background-color: #fef2f2; border-left: 5px solid #dc2626; }
+        .melon-badge { background-color: #dcfce7; color: #15803d; border: 1px solid #22c55e; font-weight: bold; font-size: 0.75rem; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+
+        /* Map & Pins */
+        .map-pin { position: absolute; cursor: pointer; z-index: 10; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5)); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; transform-origin: bottom center; }
+        .map-pin:active { z-index: 100 !important; } .map-pin.pin-selected { z-index: 50; } 
+        .pin-head { width: 30px; height: 30px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); overflow: hidden; white-space: nowrap; }
+        .pin-text-long { font-size: 8px; transform: scale(0.9); }
+        .pin-pending .pin-head { background-color: #f97316; border-color: #fff; }
+        .pin-priority .pin-head { background-color: #dc2626; border-color: #fff; box-shadow: 0 0 0 2px #fecaca; }
+        .pin-bought .pin-head { background-color: #0ea5e9; }
+        .pin-failed .pin-head { background-color: #9ca3af; opacity: 0.8; transform: scale(0.9); }
+        .pin-selected .pin-head { background-color: #4f46e5 !important; border-color: #fbbf24 !important; }
+        .pin-needle { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid white; margin: -2px auto 0; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2)); }
+        
+        .pin-label-popup { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px; background-color: rgba(255, 255, 255, 0.95); border: 1px solid #e5e7eb; border-radius: 4px; padding: 4px 8px; white-space: nowrap; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); pointer-events: none; min-width: 80px; max-width: 140px; }
+        .pin-label-popup .circle { font-weight: bold; font-size: 10px; color: #1f2937; overflow: hidden; text-overflow: ellipsis; }
+        .pin-label-popup .item { font-size: 9px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Layout */
+        .tab-active { border-bottom: 3px solid #4f46e5; color: #4f46e5; font-weight: bold; background-color: #eef2ff; }
+        .tab-inactive { color: #6b7280; border-bottom: 3px solid transparent; }
+        .landscape-fullscreen-map { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; z-index: 100; }
+        .landscape-control-bar { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); border-bottom: 1px solid rgba(0,0,0,0.1); }
+        .map-viewport { width: 100%; height: 100%; overflow: hidden; position: relative; background-color: #d1d5db; touch-action: none; cursor: grab; }
+        .map-viewport:active { cursor: grabbing; }
+        .map-transform-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+    <div id="app" class="h-full flex flex-col bg-gray-50 shadow-lg relative overflow-hidden" :class="isLandscapeMap ? 'w-full' : 'max-w-md mx-auto'">
+        
+        <div v-show="!isLandscapeMap" class="shrink-0 z-50">
+            <header class="bg-indigo-600 text-white p-3 shadow-md">
+                <div class="flex justify-between items-center mb-2">
+                    <h1 class="text-xl font-bold"><i class="fa-solid fa-map-location-dot mr-2"></i>ComiTact</h1>
+                    <div class="text-xs flex gap-2 items-center">
+                        <button @click="showCloudModal = true" class="bg-indigo-700 hover:bg-indigo-800 text-white px-2 py-1 rounded transition-colors flex items-center gap-1">
+                            <i class="fa-solid fa-cloud" :class="{'text-green-300': isCloudConfigured}"></i>
+                            <span v-if="cloudConfig.account">{{ cloudConfig.account }}</span>
+                            <span v-else>未接続</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center px-1 mb-2">
+                     <span class="text-xs bg-indigo-700 px-2 py-0.5 rounded text-white opacity-90">{{ currentDay }}日目 - 残: {{ pendingCount }}</span>
+                </div>
+                <div class="flex text-center bg-white rounded overflow-hidden shadow-inner text-sm">
+                    <button @click="switchDay(1)" class="flex-1 py-1.5 transition-colors" :class="currentDay === 1 ? 'tab-active' : 'tab-inactive'">Day 1</button>
+                    <div class="w-px bg-gray-200"></div>
+                    <button @click="switchDay(2)" class="flex-1 py-1.5 transition-colors" :class="currentDay === 2 ? 'tab-active' : 'tab-inactive'">Day 2</button>
+                </div>
+            </header>
+            <div class="bg-white border-b border-gray-200 px-4 py-2 flex justify-center space-x-4">
+                <button @click="viewMode = 'list'" class="px-4 py-1 rounded-full text-sm font-bold transition-colors" :class="viewMode === 'list' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500'"><i class="fa-solid fa-list mr-1"></i> リスト</button>
+                <button @click="viewMode = 'map'" class="px-4 py-1 rounded-full text-sm font-bold transition-colors" :class="viewMode === 'map' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500'"><i class="fa-solid fa-map mr-1"></i> マップ</button>
+            </div>
+            
+            <div v-if="viewMode === 'list'" class="bg-gray-100 border-b border-gray-300 p-2 text-sm">
+                <div class="flex gap-2 mb-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-2 top-2 text-gray-400"></i>
+                        <input v-model="filter.search" placeholder="検索..." class="w-full pl-8 pr-2 py-1.5 rounded border border-gray-300 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <select v-model="filter.sort" class="border border-gray-300 rounded px-2 py-1.5 bg-white text-gray-700">
+                        <option value="location">場所順</option>
+                        <option value="priority">優先順</option>
+                    </select>
+                </div>
+                <div class="flex gap-2 items-center overflow-x-auto pb-1">
+                    <button @click="cycleMelonFilter" class="px-3 py-1 rounded border shadow-sm text-xs font-bold whitespace-nowrap transition-colors"
+                        :class="{'bg-white text-gray-600 border-gray-300': filter.melon === 'all', 'bg-green-100 text-green-700 border-green-400': filter.melon === 'only', 'bg-red-50 text-red-500 border-red-300': filter.melon === 'exclude'}">
+                        🍈 {{ filter.melon === 'all' ? '全て' : (filter.melon === 'only' ? 'Melonのみ' : 'Melonなし') }}
+                    </button>
+                    <button @click="filter.priority = !filter.priority" class="px-3 py-1 rounded border shadow-sm text-xs font-bold whitespace-nowrap transition-colors"
+                        :class="filter.priority ? 'bg-red-100 text-red-600 border-red-400' : 'bg-white text-gray-600 border-gray-300'">
+                        <i class="fa-solid fa-fire mr-1"></i>優先のみ
+                    </button>
+                    <div class="flex-1 text-right text-xs text-gray-400 self-center">{{ filteredItems.length }}件</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto relative bg-gray-100" :class="isLandscapeMap ? 'h-full' : ''">
+            <div v-show="viewMode === 'list'" class="pb-24 safe-area-pb">
+                <div class="p-4 bg-white border-b border-gray-200 mb-2" :class="{'bg-orange-50': isEditing}">
+                    <div v-if="showInput" class="space-y-3">
+                        <div v-if="isEditing" class="text-xs font-bold text-orange-600 flex justify-between"><span><i class="fa-solid fa-pen"></i> 編集モード中</span><button @click="cancelEdit" class="text-gray-400 underline">キャンセル</button></div>
+                        <div class="flex gap-2"><input v-model="newItem.location" placeholder="場所 (例: 東A-12b)" class="w-1/3 p-2 border rounded text-sm"><input v-model="newItem.circle" placeholder="サークル名" class="flex-1 p-2 border rounded text-sm"></div>
+                        <div class="flex gap-2"><input v-model="newItem.name" placeholder="商品名" class="flex-1 p-2 border rounded text-sm"><input v-model="newItem.pinLabel" maxlength="3" placeholder="ピン文字" class="w-20 p-2 border rounded text-sm text-center"></div>
+                        <div class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                            <div class="flex space-x-4">
+                                <label class="flex items-center space-x-1 text-sm cursor-pointer select-none"><input type="checkbox" v-model="newItem.melon" class="form-checkbox text-green-600 rounded"><span class="text-green-700 font-bold ml-1">🍈 Melon</span></label>
+                                <label class="flex items-center space-x-1 text-sm cursor-pointer select-none"><input type="checkbox" v-model="newItem.isPriority" class="form-checkbox text-red-600 rounded"><span class="text-red-600 font-bold ml-1"><i class="fa-solid fa-fire"></i> 優先</span></label>
+                            </div>
+                            <div class="flex gap-2"><button v-if="isEditing" @click="updateItem" :disabled="!newItem.circle" class="bg-orange-500 text-white px-4 py-1.5 rounded text-sm shadow hover:bg-orange-600">更新</button><button v-else @click="addItem" :disabled="!newItem.circle" class="bg-indigo-600 text-white px-4 py-1.5 rounded text-sm shadow hover:bg-indigo-700">追加</button></div>
+                        </div>
+                    </div>
+                    <button @click="showInput = !showInput" class="w-full text-center text-xs text-gray-400 mt-1">{{ showInput ? '▲ 閉じる' : '▼ 新規追加' }}</button>
+                </div>
+                <div class="px-2 space-y-2">
+                    <div v-if="filteredItems.length === 0" class="text-center text-gray-400 mt-8 text-sm">条件に一致する項目がありません<br><button @click="resetFilter" class="mt-2 text-indigo-600 underline">フィルターをリセット</button></div>
+                    <div v-for="item in filteredItems" :key="item.id" class="p-3 rounded shadow-sm bg-white border-l-4 relative overflow-hidden" :class="{ 'status-bought': item.status === 'bought', 'status-failed': item.status === 'failed', 'status-priority': item.status === 'pending' && item.isPriority, 'status-pending': item.status === 'pending' && !item.isPriority }">
+                        <div v-if="item.isPriority && item.status === 'pending'" class="absolute right-0 top-0 text-red-100 text-5xl -mr-4 -mt-2 opacity-20 pointer-events-none"><i class="fa-solid fa-fire"></i></div>
+                        <div class="flex justify-between items-start relative z-10">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center mb-1"><span class="font-mono font-bold bg-gray-200 px-1.5 py-0.5 rounded text-sm mr-2">{{ item.location }}</span><span v-if="item.melon" class="melon-badge mr-2">🍈 Melon</span><span v-if="item.isPriority" class="text-red-600 text-xs font-bold border border-red-200 px-1 rounded bg-red-50">優先</span></div>
+                                <div class="font-bold text-gray-800 text-sm circle-name truncate">{{ item.circle }}</div>
+                            </div>
+                            <div class="flex ml-2"><button @click="startEdit(item)" class="text-gray-400 hover:text-orange-500 text-xs p-2"><i class="fa-solid fa-pen"></i></button><button @click="deleteItem(item)" class="text-gray-400 hover:text-red-500 text-xs p-2"><i class="fa-solid fa-trash"></i></button></div>
+                        </div>
+                        <div class="text-gray-600 text-sm my-1 relative z-10">{{ item.name }}</div>
+                        <div class="flex justify-end space-x-2 mt-2 relative z-10"><button @click="toggleStatus(item, 'failed')" class="px-2 py-1 text-xs rounded border transition-colors" :class="item.status === 'failed' ? 'bg-gray-500 text-white border-gray-600' : 'bg-white text-red-400 border-red-200'">× 完売</button><button @click="toggleStatus(item, 'bought')" class="px-2 py-1 text-xs rounded border transition-colors font-bold" :class="item.status === 'bought' ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-blue-500 border-blue-200'">○ 購入</button></div>
+                        <div v-if="!item.mapId" class="mt-1 text-right relative z-10"><span class="text-xs text-orange-500 cursor-pointer font-bold hover:underline" @click="goToMapMode(item)"><i class="fa-solid fa-location-dot"></i> 地図未設定</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-show="viewMode === 'map'" class="h-full w-full flex flex-col bg-gray-200" :class="{'landscape-fullscreen-map': isLandscape}">
+                <div class="p-2 border-b border-gray-300 flex flex-wrap gap-2 items-center justify-between shrink-0 z-50" :class="isLandscape ? 'landscape-control-bar absolute top-0 left-0 right-0' : 'bg-gray-100'">
+                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                        <button v-if="isLandscape" @click="viewMode = 'list'" class="bg-indigo-600 text-white px-3 py-1.5 rounded shadow text-xs font-bold shrink-0"><i class="fa-solid fa-list"></i> リスト</button>
+                        <select v-if="maps[currentDay].length > 0" v-model="activeMapId" @change="resetView" class="text-sm p-1.5 border rounded shadow-sm opacity-90 max-w-[150px]"><option v-for="map in maps[currentDay]" :value="map.id">{{ map.name }}</option></select>
+                        <div v-else class="text-xs text-gray-500 py-1.5">地図なし</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div v-if="isLandscape" class="flex text-xs bg-white rounded border shadow-sm mr-1"><button @click="switchDay(1)" class="px-2 py-1" :class="currentDay===1 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day1</button><div class="w-px bg-gray-200"></div><button @click="switchDay(2)" class="px-2 py-1" :class="currentDay===2 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day2</button></div>
+                        <label class="flex items-center cursor-pointer select-none bg-white/80 p-1 rounded"><div class="relative"><input type="checkbox" v-model="showPinLabels" class="sr-only peer"><div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div></div><span class="ml-1 text-[10px] font-bold text-gray-600">詳細</span></label>
+                        <label class="bg-white text-indigo-600 border border-indigo-600 px-3 py-1 rounded text-xs shadow-sm cursor-pointer hover:bg-indigo-50"><i class="fa-solid fa-plus"></i><span class="hidden sm:inline ml-1">地図</span><input type="file" accept="image/*" class="hidden" @change="handleImageUpload"></label>
+                    </div>
+                </div>
+                <div v-if="isFilterActive" class="bg-yellow-50 text-yellow-800 text-xs px-2 py-1 text-center border-b border-yellow-200 z-40" :class="isLandscape ? 'mt-[50px] absolute w-full top-0' : ''"><i class="fa-solid fa-filter"></i> フィルター適用中 ({{ filteredItems.length }}件)</div>
+                
+                <div class="map-viewport" @touchstart.prevent="handleTouchStart" @touchmove.prevent="handleTouchMove" @touchend.prevent="handleTouchEnd" @wheel.prevent="handleWheel" @mousedown="handleMouseDown">
+                    <div v-if="maps[currentDay].length === 0" class="flex flex-col items-center justify-center h-full text-gray-500 p-4 pt-20"><i class="fa-regular fa-map text-4xl mb-2"></i><p class="text-center text-sm">地図画像を追加してください</p></div>
+                    <div v-else-if="activeMapData" ref="mapLayer" class="map-transform-layer" :style="{ transform: `translate(${mapState.x}px, ${mapState.y}px) scale(${mapState.scale})` }">
+                        <img :src="activeMapData.src" ref="mapImage" class="max-w-none block select-none pointer-events-none" :style="isLandscape ? 'margin-top: 50px;' : ''" @load="resetView">
+                        <div v-for="item in visiblePins" :key="item.id">
+                             <div class="map-pin" :class="[getPinColorClass(item), targetItem?.id === item.id ? 'pin-selected' : '']" :style="{ left: item.mapX + '%', top: item.mapY + '%', marginTop: isLandscape ? '50px' : '0', transform: `translate(-50%, -100%) scale(${getInverseScale()})` }" @touchstart.stop="selectPin(item)" @mousedown.stop="selectPin(item)">
+                                <div v-if="showPinLabels" class="pin-label-popup" :style="{ transform: `translateX(-50%) scale(${Math.max(1, mapState.scale * 0.5)})` }"><div class="circle">{{ item.circle }}</div><div class="item">{{ item.name }}</div></div>
+                                <div class="pin-head" :class="{'pin-text-long': (item.pinLabel || '').length > 2}">{{ getPinLabel(item) }}</div><div class="pin-needle"></div>
+                            </div>
+                        </div>
+                        <div v-if="targetItem && !targetItem.mapId" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-indigo-900/90 text-white px-4 py-2 rounded-full text-xs shadow-xl pointer-events-none animate-bounce z-50 whitespace-nowrap border border-white/20" :style="{ transform: `translate(-50%, -50%) scale(${1/mapState.scale})` }"><span class="font-bold text-orange-300">{{ targetItem.circle }}</span> の場所をタップ</div>
+                    </div>
+                    <button @click="resetView" class="absolute bottom-20 right-4 bg-white/90 p-2 rounded-full shadow text-gray-600 z-40 text-xs font-bold border border-gray-300 safe-area-pb" title="リセット"><i class="fa-solid fa-compress"></i></button>
+                </div>
+                <div class="absolute bottom-4 left-4 right-4 bg-white/95 p-2 rounded-lg shadow-xl border border-gray-200 z-50 flex flex-col gap-2 max-w-xl mx-auto safe-area-pb">
+                    <div v-if="targetItem" class="flex justify-between items-center border-b pb-2 mb-1">
+                        <div class="overflow-hidden mr-2"><div class="text-xs font-bold text-indigo-600 flex items-center gap-1"><span v-if="targetItem.isPriority" class="text-red-500"><i class="fa-solid fa-fire"></i></span>{{ targetItem.location }}</div><div class="font-bold text-sm truncate">{{ targetItem.circle }}</div></div>
+                        <div class="flex gap-2 shrink-0"><button @click="toggleStatus(targetItem, 'failed')" class="w-9 h-9 rounded-full flex items-center justify-center border transition-colors" :class="targetItem.status === 'failed' ? 'bg-gray-500 text-white border-gray-600' : 'bg-gray-100 text-gray-400 border-gray-200'"><i class="fa-solid fa-xmark"></i></button><button @click="toggleStatus(targetItem, 'bought')" class="w-9 h-9 rounded-full flex items-center justify-center border transition-colors" :class="targetItem.status === 'bought' ? 'bg-blue-500 text-white border-blue-600' : 'bg-blue-50 text-blue-400 border-blue-200'"><i class="fa-solid fa-check"></i></button><button @click="targetItem = null" class="w-9 h-9 rounded-full bg-gray-50 text-gray-400 border border-gray-200 flex items-center justify-center"><i class="fa-solid fa-angles-down"></i></button></div>
+                    </div>
+                    <div v-else>
+                        <div class="text-xs text-gray-500 mb-1 font-bold flex justify-between"><span>未配置 (フィルター後):</span><span v-if="unmappedItems.length > 0" class="bg-orange-100 text-orange-600 px-1.5 rounded text-[10px]">{{ unmappedItems.length }}件</span></div>
+                        <div class="flex overflow-x-auto gap-2 pb-1 scrollbar-hide">
+                            <div v-for="item in unmappedItems" :key="item.id" @click="startMapping(item)" class="shrink-0 bg-white px-3 py-2 rounded border border-gray-300 text-xs cursor-pointer hover:border-orange-500 hover:bg-orange-50 shadow-sm w-24" :class="{'border-red-300 bg-red-50': item.isPriority}"><span class="font-bold block text-gray-700" :class="{'text-red-600': item.isPriority}"><i v-if="item.isPriority" class="fa-solid fa-fire text-[10px]"></i> {{ item.location }}</span><span class="truncate block text-gray-500">{{ item.circle }}</span></div>
+                            <div v-if="unmappedItems.length === 0" class="text-xs text-gray-400 p-2 w-full text-center bg-gray-50 rounded border border-dashed">配置対象なし</div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center mt-1 pt-1 border-t border-gray-100"><button v-if="activeMapData" @click="deleteCurrentMap" class="text-xs text-red-400 hover:text-red-600"><i class="fa-regular fa-trash-can"></i> 地図削除</button><button @click="exportData" class="text-xs text-gray-500 hover:text-indigo-600"><i class="fa-solid fa-file-export"></i> 保存</button></div>
+                </div>
+            </div>
+        </div>
+        
+        <div v-if="showCloudModal" class="modal-overlay" @click.self="showCloudModal = false">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-11/12 max-w-sm relative">
+                <button @click="showCloudModal = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <h2 class="text-lg font-bold mb-4 flex items-center gap-2"><i class="fa-solid fa-cloud text-indigo-600"></i> クラウド同期</h2>
+                <div class="space-y-4">
+                    <div v-if="!hasDefaultUrl">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">API URL</label>
+                        <input v-model="cloudConfig.url" placeholder="https://script.google.com/..." class="w-full p-2 border rounded text-sm bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">アカウント名 (共有ID)</label>
+                        <input v-model="cloudConfig.account" placeholder="例: team_abc" class="w-full p-2 border rounded text-sm">
+                        <p class="text-[10px] text-gray-400 mt-1">※他の人と被らないIDにしてください</p>
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <button @click="syncPull" class="flex-1 bg-blue-100 text-blue-700 py-2 rounded font-bold hover:bg-blue-200 text-sm" :disabled="!isCloudConfigured"><i class="fa-solid fa-download"></i> 読込</button>
+                        <button @click="syncPush" class="flex-1 bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 text-sm" :disabled="!isCloudConfigured"><i class="fa-solid fa-upload"></i> 保存</button>
+                    </div>
+                    <div class="text-center"><p v-if="syncStatus" class="text-xs font-bold" :class="syncStatus.includes('成功') ? 'text-green-600' : 'text-red-500'">{{ syncStatus }}</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        //  ▼▼▼ 設定: ここにGASのURLを貼る ▼▼▼
+        const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwsEur_SeCSKB_q_0V9fc22YsS_p1AQ-VLjVjErH9F01T4q5fxGTgzC-S6M1roKUtzs/exec'; 
+        //  ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        // ==========================================
+
+        // --- Database Helper (IndexedDB) ---
+        const DB_NAME = 'ComiMemoDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'appData';
+
+        // DBオープン処理を確実に行う
+        const dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = e => reject(e);
+            request.onupgradeneeded = e => {
+                if (!e.target.result.objectStoreNames.contains(STORE_NAME)) {
+                    e.target.result.createObjectStore(STORE_NAME);
+                }
+            };
+            request.onsuccess = e => resolve(e.target.result);
+        });
+
+        // idbオブジェクトを明確に定義
+        const idb = {
+            async get(key) {
+                const db = await dbPromise;
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, 'readonly');
+                    const request = transaction.objectStore(STORE_NAME).get(key);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            },
+            async put(key, value) {
+                const db = await dbPromise;
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, 'readwrite');
+                    const request = transaction.objectStore(STORE_NAME).put(value, key);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+            }
+        };
+
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    currentDay: 1, viewMode: 'list', showInput: true, targetItem: null, showPinLabels: false, isEditing: false, editingId: null, saving: false, isLandscape: false,
+                    maps: { 1: [], 2: [] }, activeMapId: null,
+                    newItem: { location: '', circle: '', name: '', melon: false, isPriority: false, pinLabel: '', status: 'pending' },
+                    items: [], filter: { search: '', sort: 'location', melon: 'all', priority: false },
+                    mapState: { x: 0, y: 0, scale: 1 }, pinchStart: { dist: 0, midX: 0, midY: 0, scale: 1, x: 0, y: 0 }, lastPan: { x: 0, y: 0 }, isDragging: false, isPinching: false, hasMoved: false,
+                    showCloudModal: false, cloudConfig: { url: '', account: '' }, syncStatus: '', hasDefaultUrl: false
+                }
+            },
+            mounted() {
+                this.initLoad(); this.checkOrientation();
+                window.addEventListener('resize', this.checkOrientation); window.addEventListener('orientationchange', this.checkOrientation);
+                window.addEventListener('mousemove', this.handleMouseMove); window.addEventListener('mouseup', this.handleMouseUp);
+                
+                // Initialize Cloud Config
+                if (typeof DEFAULT_API_URL !== 'undefined' && DEFAULT_API_URL.length > 10) {
+                    this.cloudConfig.url = DEFAULT_API_URL;
+                    this.hasDefaultUrl = true;
+                }
+                const savedConf = localStorage.getItem('comitact_cloud_config');
+                if(savedConf) {
+                    const parsed = JSON.parse(savedConf);
+                    this.cloudConfig.account = parsed.account;
+                    if (!this.hasDefaultUrl && parsed.url) this.cloudConfig.url = parsed.url;
+                }
+            },
+            beforeUnmount() { window.removeEventListener('mousemove', this.handleMouseMove); window.removeEventListener('mouseup', this.handleMouseUp); },
+            computed: {
+                isLandscapeMap() { return this.isLandscape && this.viewMode === 'map'; },
+                currentDayItems() { return this.items.filter(item => item.day === this.currentDay); },
+                filteredItems() {
+                    let res = this.currentDayItems;
+                    if (this.filter.search) { const q = this.filter.search.toLowerCase(); res = res.filter(i => (i.circle && i.circle.toLowerCase().includes(q)) || (i.name && i.name.toLowerCase().includes(q)) || (i.location && i.location.toLowerCase().includes(q))); }
+                    if (this.filter.melon === 'only') res = res.filter(i => i.melon); if (this.filter.melon === 'exclude') res = res.filter(i => !i.melon); if (this.filter.priority) res = res.filter(i => i.isPriority);
+                    return res.sort((a, b) => { if (this.filter.sort === 'priority') { if (a.isPriority !== b.isPriority) return b.isPriority - a.isPriority; } return a.location.localeCompare(b.location, undefined, {numeric: true, sensitivity: 'base'}); });
+                },
+                visiblePins() { return this.filteredItems.filter(i => i.mapId === this.activeMapId); },
+                unmappedItems() { return this.filteredItems.filter(i => !i.mapId); },
+                pendingCount() { return this.currentDayItems.filter(i => i.status === 'pending').length; },
+                activeMapData() { if (!this.activeMapId) return null; return this.maps[this.currentDay].find(m => m.id === this.activeMapId); },
+                isFilterActive() { return this.filter.search || this.filter.melon !== 'all' || this.filter.priority; },
+                isCloudConfigured() { return this.cloudConfig.url && this.cloudConfig.account; }
+            },
+            methods: {
+                checkOrientation() { this.isLandscape = window.innerWidth > window.innerHeight; },
+                async initLoad() {
+                    try { const data = await idb.get('full_data'); if (data) { this.items = data.items || []; this.maps = data.maps || { 1: [], 2: [] }; } else { this.migrate(); } } catch (e) { this.migrate(); }
+                    this.setDefaultActiveMap();
+                },
+                migrate() { /* Migration logic omitted */ },
+                
+                // --- Cloud Sync ---
+                saveCloudConfig() { localStorage.setItem('comitact_cloud_config', JSON.stringify({ url: this.hasDefaultUrl ? '' : this.cloudConfig.url, account: this.cloudConfig.account })); },
+                async syncPush() {
+                    this.saveCloudConfig(); this.syncStatus = '送信中...';
+                    try {
+                        const payload = { account: this.cloudConfig.account, data: { items: this.items, maps: this.maps, timestamp: Date.now() } };
+                        // Robust Fetch with Redirect Following
+                        await fetch(this.cloudConfig.url, {
+                            method: 'POST',
+                            redirect: 'follow',
+                            headers: { "Content-Type": "text/plain;charset=utf-8" },
+                            body: JSON.stringify(payload)
+                        });
+                        this.syncStatus = '送信成功: ' + new Date().toLocaleTimeString();
+                    } catch (e) { this.syncStatus = 'エラー: ' + e.message; }
+                },
+                async syncPull() {
+                    this.saveCloudConfig(); this.syncStatus = '受信中...';
+                    try {
+                        const res = await fetch(`${this.cloudConfig.url}?account=${this.cloudConfig.account}`);
+                        const data = await res.json();
+                        if (!data) { this.syncStatus = 'データ無し'; return; }
+                        if(confirm('クラウドデータで上書きしますか？')) {
+                            this.items = data.items || []; this.maps = data.maps || { 1: [], 2: [] };
+                            // Try-Catch specific for saving to ensure UI doesn't crash even if DB fails
+                            try { await this.saveData(); } catch(err) { console.error("Local Save Error:", err); }
+                            this.syncStatus = '受信成功'; this.setDefaultActiveMap(); this.resetView();
+                        } else { this.syncStatus = 'キャンセル'; }
+                    } catch (e) { this.syncStatus = 'エラー: ' + e.message; }
+                },
+
+                // --- App Logic ---
+                cycleMelonFilter() { if (this.filter.melon === 'all') this.filter.melon = 'only'; else if (this.filter.melon === 'only') this.filter.melon = 'exclude'; else this.filter.melon = 'all'; },
+                resetFilter() { this.filter = { search: '', sort: 'location', melon: 'all', priority: false }; },
+                switchDay(day) { this.currentDay = day; this.targetItem = null; this.cancelEdit(); this.setDefaultActiveMap(); this.resetView(); },
+                setDefaultActiveMap() { if (this.maps[this.currentDay].length > 0) { if (!this.maps[this.currentDay].find(m => m.id === this.activeMapId)) this.activeMapId = this.maps[this.currentDay][0].id; } else { this.activeMapId = null; } },
+                getPinLabel(item) { if (item.pinLabel && item.pinLabel.trim() !== '') return item.pinLabel.substring(0, 3); const match = item.location.match(/[a-zA-Zあ-んア-ン]/); return match ? match[0] : item.location.charAt(0); },
+                getPinColorClass(item) { if (item.status === 'bought') return 'pin-bought'; if (item.status === 'failed') return 'pin-failed'; if (item.isPriority) return 'pin-priority'; return 'pin-pending'; },
+                startEdit(item) { this.isEditing = true; this.editingId = item.id; this.showInput = true; this.newItem = JSON.parse(JSON.stringify(item)); if(this.viewMode === 'list') window.scrollTo({ top: 0, behavior: 'smooth' }); },
+                cancelEdit() { this.isEditing = false; this.editingId = null; this.newItem = { location: '', circle: '', name: '', melon: false, isPriority: false, pinLabel: '', status: 'pending' }; },
+                updateItem() { const index = this.items.findIndex(i => i.id === this.editingId); if (index !== -1) { this.items[index] = { ...this.items[index], ...this.newItem }; this.saveData(); } this.cancelEdit(); },
+                addItem() { if (!this.newItem.circle) return; const item = { id: Date.now(), day: this.currentDay, mapId: null, mapX: null, mapY: null, ...this.newItem }; this.items.push(item); this.newItem = { location: '', circle: '', name: '', melon: false, isPriority: false, pinLabel: '', status: 'pending' }; if (this.maps[this.currentDay].length > 0 && this.viewMode === 'list') this.startMapping(item); this.saveData(); },
+                deleteItem(item) { if(confirm('削除しますか？')) { this.items = this.items.filter(i => i.id !== item.id); if (this.targetItem?.id === item.id) this.targetItem = null; if (this.editingId === item.id) this.cancelEdit(); this.saveData(); } },
+                toggleStatus(item, newStatus) { item.status = (item.status === newStatus) ? 'pending' : newStatus; this.saveData(); },
+                handleImageUpload(e) { const file = e.target.files[0]; if (!file) return; if (file.size > 50 * 1024 * 1024) { alert('50MB以下にしてください'); return; } const name = prompt("地図の名前", "地図 " + (this.maps[this.currentDay].length + 1)); if (!name) return; const reader = new FileReader(); reader.onload = (evt) => { const newId = Date.now(); this.maps[this.currentDay].push({ id: newId, name: name, src: evt.target.result }); this.activeMapId = newId; this.saveData(); this.resetView(); }; reader.readAsDataURL(file); e.target.value = ''; },
+                deleteCurrentMap() { if (!this.activeMapId) return; if (confirm(`地図削除しますか？`)) { this.items.forEach(i => { if (i.mapId === this.activeMapId) { i.mapId = null; i.mapX = null; i.mapY = null; } }); this.maps[this.currentDay] = this.maps[this.currentDay].filter(m => m.id !== this.activeMapId); this.setDefaultActiveMap(); this.saveData(); } },
+                startMapping(item) { this.targetItem = item; this.viewMode = 'map'; if (item.mapId) { this.activeMapId = item.mapId; this.currentDay = item.day; } },
+                goToMapMode(item) { this.startMapping(item); },
+                selectPin(item) { this.targetItem = item; },
+                async saveData() { 
+                    this.saving = true; 
+                    try { 
+                        // Clone data to avoid reference issues
+                        const data = JSON.parse(JSON.stringify({ items: this.items, maps: this.maps })); 
+                        // Call global idb object
+                        await idb.put('full_data', data); 
+                    } catch (e) { 
+                        console.error('AutoSave Error (Ignored):', e);
+                        // Do not alert on auto-save error to keep UI responsive
+                    } finally { 
+                        this.saving = false; 
+                    } 
+                },
+                exportData() { const blob = new Blob([JSON.stringify({ items: this.items, maps: this.maps })], {type: "text/plain"}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = "comitact_backup.json"; a.click(); URL.revokeObjectURL(url); },
+                
+                // --- Interaction Logic ---
+                handleTouchStart(e) { this.hasMoved = false; if (e.touches.length === 2) { this.isPinching = true; const t1 = e.touches[0]; const t2 = e.touches[1]; this.pinchStart.dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); this.pinchStart.midX = (t1.clientX + t2.clientX) / 2; this.pinchStart.midY = (t1.clientY + t2.clientY) / 2; this.pinchStart.scale = this.mapState.scale; this.pinchStart.x = this.mapState.x; this.pinchStart.y = this.mapState.y; } else if (e.touches.length === 1) { this.isDragging = true; this.lastPan.x = e.touches[0].clientX; this.lastPan.y = e.touches[0].clientY; } },
+                handleTouchMove(e) { if (this.isPinching && e.touches.length === 2) { this.hasMoved = true; const t1 = e.touches[0]; const t2 = e.touches[1]; const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY); const currentMidX = (t1.clientX + t2.clientX) / 2; const currentMidY = (t1.clientY + t2.clientY) / 2; const zoomRatio = currentDist / this.pinchStart.dist; const newScale = Math.max(0.5, Math.min(6, this.pinchStart.scale * zoomRatio)); const relativeRatio = newScale / this.pinchStart.scale; this.mapState.scale = newScale; this.mapState.x = currentMidX - (this.pinchStart.midX - this.pinchStart.x) * relativeRatio; this.mapState.y = currentMidY - (this.pinchStart.midY - this.pinchStart.y) * relativeRatio; } else if (this.isDragging && e.touches.length === 1) { const dist = Math.hypot(e.touches[0].clientX - this.lastPan.x, e.touches[0].clientY - this.lastPan.y); if (dist > 5) this.hasMoved = true; const dx = e.touches[0].clientX - this.lastPan.x; const dy = e.touches[0].clientY - this.lastPan.y; this.mapState.x += dx; this.mapState.y += dy; this.lastPan.x = e.touches[0].clientX; this.lastPan.y = e.touches[0].clientY; } },
+                handleTouchEnd(e) { if (!this.hasMoved && !this.isPinching) { const touch = e.changedTouches[0]; this.triggerMapTap(touch.clientX, touch.clientY); } if (e.touches.length === 0) { this.isDragging = false; this.isPinching = false; } else if (e.touches.length === 1) { this.isPinching = false; this.isDragging = true; this.lastPan.x = e.touches[0].clientX; this.lastPan.y = e.touches[0].clientY; } },
+                handleWheel(e) { const zoomSensitivity = 0.001; const delta = -e.deltaY * zoomSensitivity; const oldScale = this.mapState.scale; const newScale = Math.max(0.5, Math.min(6, oldScale + delta * (oldScale * 2))); const ratio = newScale / oldScale; this.mapState.scale = newScale; this.mapState.x = e.clientX - (e.clientX - this.mapState.x) * ratio; this.mapState.y = e.clientY - (e.clientY - this.mapState.y) * ratio; },
+                handleMouseDown(e) { this.isDragging = true; this.hasMoved = false; this.lastPan.x = e.clientX; this.lastPan.y = e.clientY; },
+                handleMouseMove(e) { if (!this.isDragging) return; if (e.buttons !== 1) { this.isDragging = false; return; } if (Math.abs(e.clientX - this.lastPan.x) > 2 || Math.abs(e.clientY - this.lastPan.y) > 2) { this.hasMoved = true; } const dx = e.clientX - this.lastPan.x; const dy = e.clientY - this.lastPan.y; this.mapState.x += dx; this.mapState.y += dy; this.lastPan.x = e.clientX; this.lastPan.y = e.clientY; },
+                handleMouseUp(e) { if (this.isDragging && !this.hasMoved) { this.triggerMapTap(e.clientX, e.clientY); } this.isDragging = false; },
+                triggerMapTap(clientX, clientY) { if (!this.targetItem || !this.activeMapId) return; const mapImg = this.$refs.mapImage; if (!mapImg) return; const rect = mapImg.getBoundingClientRect(); this.targetItem.mapId = this.activeMapId; this.targetItem.mapX = ((clientX - rect.left) / rect.width) * 100; this.targetItem.mapY = ((clientY - rect.top) / rect.height) * 100; this.targetItem = null; this.saveData(); },
+                resetView() { this.mapState = { x: 0, y: 0, scale: 1 }; },
+                getInverseScale() { return 1 / Math.sqrt(this.mapState.scale); }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
