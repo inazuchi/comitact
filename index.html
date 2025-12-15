@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ComiTact v27</title>
+    <title>ComiTact v29</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -15,7 +15,20 @@
             background-color: #f3f4f6; 
             user-select: none; overscroll-behavior: none; touch-action: none;
             height: 100vh; height: 100dvh;
+            margin: 0; padding: 0;
         }
+        
+        #app {
+            width: 100%;
+            height: 100%;
+            /* max-width制限を撤廃し、PC/横画面では全幅を使う */
+            background-color: #f3f4f6;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
         .safe-area-pb { padding-bottom: env(safe-area-inset-bottom, 20px); }
 
         /* ステータスごとの色定義 */
@@ -46,8 +59,7 @@
         /* レイアウト */
         .tab-active { border-bottom: 3px solid #4f46e5; color: #4f46e5; font-weight: bold; background-color: #eef2ff; }
         .tab-inactive { color: #6b7280; border-bottom: 3px solid transparent; }
-        .landscape-fullscreen-map { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; z-index: 100; }
-        .landscape-control-bar { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); border-bottom: 1px solid rgba(0,0,0,0.1); }
+        
         .map-viewport { width: 100%; height: 100%; overflow: hidden; position: relative; background-color: #d1d5db; touch-action: none; cursor: grab; }
         .map-viewport:active { cursor: grabbing; }
         .map-transform-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
@@ -81,9 +93,9 @@
     </style>
 </head>
 <body>
-    <div id="app" class="h-full flex flex-col bg-gray-50 shadow-lg relative overflow-hidden" :class="isLandscapeMap ? 'w-full' : 'max-w-md mx-auto'">
+    <div id="app">
         
-        <div v-show="!isLandscapeMap" class="shrink-0 z-50">
+        <div class="shrink-0 z-50">
             <header class="bg-indigo-600 text-white p-3 shadow-md">
                 <div class="flex justify-between items-center mb-2">
                     <h1 class="text-xl font-bold"><i class="fa-solid fa-map-location-dot mr-2"></i>ComiTact</h1>
@@ -171,7 +183,7 @@
             </div>
         </div>
 
-        <div class="flex-1 flex flex-col relative bg-gray-100 overflow-hidden" :class="isLandscapeMap ? 'h-full' : ''">
+        <div class="flex-1 flex flex-col relative bg-gray-100 overflow-hidden">
             
             <div v-if="viewMode === 'list'" class="flex-1 flex flex-col h-full min-h-0">
                 <div class="shrink-0 bg-white border-b border-gray-200 shadow-sm z-30">
@@ -211,26 +223,26 @@
             </div>
 
             <div v-if="viewMode === 'map'" class="flex-1 h-full relative bg-gray-200 overflow-hidden">
-                <div class="p-2 border-b border-gray-300 flex flex-wrap gap-2 items-center justify-between shrink-0 z-50" :class="isLandscape ? 'landscape-control-bar absolute top-0 left-0 right-0' : 'bg-gray-100'">
+                <div class="p-2 border-b border-gray-300 flex flex-wrap gap-2 items-center justify-between shrink-0 z-50 bg-gray-100">
                     <div class="flex items-center gap-2 flex-1 min-w-0">
-                        <button v-if="isLandscape" @click="viewMode = 'list'" class="bg-indigo-600 text-white px-3 py-1.5 rounded shadow text-xs font-bold shrink-0"><i class="fa-solid fa-list"></i> リスト</button>
+                        <button @click="viewMode = 'list'" class="bg-indigo-600 text-white px-3 py-1.5 rounded shadow text-xs font-bold shrink-0"><i class="fa-solid fa-list"></i> リスト</button>
                         <select v-if="maps[currentDay].length > 0" v-model="activeMapId" @change="resetView" class="text-sm p-1.5 border rounded shadow-sm opacity-90 max-w-[150px]"><option v-for="map in maps[currentDay]" :value="map.id">{{ map.name }}</option></select>
                         <div v-else class="text-xs text-gray-500 py-1.5">地図なし</div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <div v-if="isLandscape" class="flex text-xs bg-white rounded border shadow-sm mr-1"><button @click="switchDay(1)" class="px-2 py-1" :class="currentDay===1 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day1</button><div class="w-px bg-gray-200"></div><button @click="switchDay(2)" class="px-2 py-1" :class="currentDay===2 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day2</button></div>
+                        <div class="flex text-xs bg-white rounded border shadow-sm mr-1"><button @click="switchDay(1)" class="px-2 py-1" :class="currentDay===1 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day1</button><div class="w-px bg-gray-200"></div><button @click="switchDay(2)" class="px-2 py-1" :class="currentDay===2 ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-500'">Day2</button></div>
                         <label class="flex items-center cursor-pointer select-none bg-white/80 p-1 rounded"><div class="relative"><input type="checkbox" v-model="showPinLabels" class="sr-only peer"><div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div></div><span class="ml-1 text-[10px] font-bold text-gray-600">詳細</span></label>
                         <label class="bg-white text-indigo-600 border border-indigo-600 px-3 py-1 rounded text-xs shadow-sm cursor-pointer hover:bg-indigo-50"><i class="fa-solid fa-plus"></i><span class="hidden sm:inline ml-1">地図</span><input type="file" accept="image/*" class="hidden" @change="handleImageUpload"></label>
                     </div>
                 </div>
-                <div v-if="isFilterActive" class="bg-yellow-50 text-yellow-800 text-xs px-2 py-1 text-center border-b border-yellow-200 z-40" :class="isLandscape ? 'mt-[50px] absolute w-full top-0' : ''"><i class="fa-solid fa-filter"></i> フィルター適用中 ({{ filteredItems.length }}件)</div>
+                <div v-if="isFilterActive" class="bg-yellow-50 text-yellow-800 text-xs px-2 py-1 text-center border-b border-yellow-200 z-40"><i class="fa-solid fa-filter"></i> フィルター適用中 ({{ filteredItems.length }}件)</div>
                 
                 <div class="map-viewport" @touchstart.prevent="handleTouchStart" @touchmove.prevent="handleTouchMove" @touchend.prevent="handleTouchEnd" @wheel.prevent="handleWheel" @mousedown="handleMouseDown">
                     <div v-if="maps[currentDay].length === 0" class="flex flex-col items-center justify-center h-full text-gray-500 p-4 pt-20"><i class="fa-regular fa-map text-4xl mb-2"></i><p class="text-center text-sm">地図画像を追加してください</p></div>
                     <div v-else-if="activeMapData" ref="mapLayer" class="map-transform-layer" :style="{ transform: `translate(${mapState.x}px, ${mapState.y}px) scale(${mapState.scale})` }">
-                        <img :src="activeMapData.src" ref="mapImage" class="max-w-none block select-none pointer-events-none" :style="isLandscape ? 'margin-top: 50px;' : ''" @load="resetView">
+                        <img :src="activeMapData.src" ref="mapImage" class="max-w-none block select-none pointer-events-none" @load="resetView">
                         <div v-for="item in visiblePins" :key="item.id">
-                             <div class="map-pin" :class="[getPinColorClass(item), targetItem?.id === item.id ? 'pin-selected' : '']" :style="{ left: item.mapX + '%', top: item.mapY + '%', marginTop: isLandscape ? '50px' : '0', transform: `translate(-50%, -100%) scale(${getInverseScale()})` }" @touchstart.stop="selectPin(item)" @mousedown.stop="selectPin(item)">
+                             <div class="map-pin" :class="[getPinColorClass(item), targetItem?.id === item.id ? 'pin-selected' : '']" :style="{ left: item.mapX + '%', top: item.mapY + '%', transform: `translate(-50%, -100%) scale(${getInverseScale()})` }" @touchstart.stop="selectPin(item)" @mousedown.stop="selectPin(item)">
                                 <div v-if="showPinLabels" class="pin-label-popup" :style="{ transform: `translateX(-50%) scale(${Math.max(1, mapState.scale * 0.5)})` }"><div class="circle">{{ item.circle }}</div><div class="item">{{ item.name }}</div></div>
                                 <div class="pin-head" :class="{'pin-text-long': (item.pinLabel || '').length > 2}">{{ getPinLabel(item) }}</div><div class="pin-needle"></div>
                             </div>
@@ -306,11 +318,11 @@
         createApp({
             data() {
                 return {
-                    currentDay: 1, viewMode: 'list', showInput: true, targetItem: null, showPinLabels: false, isEditing: false, editingId: null, saving: false, isLandscape: false,
+                    currentDay: 1, viewMode: 'list', showInput: true, targetItem: null, showPinLabels: false, isEditing: false, editingId: null, saving: false,
                     maps: { 1: [], 2: [] }, activeMapId: null,
                     newItem: { location: '', circle: '', name: '', melon: false, isPriority: false, pinLabel: '', status: 'pending' },
                     items: [], 
-                    // v27: 堅実なフィルターステート
+                    // v29: 安定版フィルターステート
                     filter: { search: '', sort: 'location', melon: 'all', priority: false, showSecured: true, showFailed: true },
                     showFilters: false, 
                     mapState: { x: 0, y: 0, scale: 1 }, pinchStart: { dist: 0, midX: 0, midY: 0, scale: 1, x: 0, y: 0 }, lastPan: { x: 0, y: 0 }, isDragging: false, isPinching: false, hasMoved: false,
@@ -318,8 +330,7 @@
                 }
             },
             mounted() {
-                this.initLoad(); this.checkOrientation();
-                window.addEventListener('resize', this.checkOrientation); window.addEventListener('orientationchange', this.checkOrientation);
+                this.initLoad();
                 window.addEventListener('mousemove', this.handleMouseMove); window.addEventListener('mouseup', this.handleMouseUp);
                 
                 // --- 同期設定の初期化 ---
@@ -329,7 +340,7 @@
             },
             beforeUnmount() { window.removeEventListener('mousemove', this.handleMouseMove); window.removeEventListener('mouseup', this.handleMouseUp); },
             computed: {
-                isLandscapeMap() { return this.isLandscape && this.viewMode === 'map'; },
+                isLandscapeMap() { return false; }, // 横画面ロジック無効化
                 currentDayItems() { return this.items.filter(item => item.day === this.currentDay); },
                 // 未消化のみボタンの状態判定
                 isUnfinishedOnly() { return !this.filter.showSecured && !this.filter.showFailed; },
@@ -363,7 +374,6 @@
                 isCloudConfigured() { return this.cloudConfig.url && this.cloudConfig.account; }
             },
             methods: {
-                checkOrientation() { this.isLandscape = window.innerWidth > window.innerHeight; },
                 async initLoad() { try { const data = await idb.get('full_data'); if (data) { this.items = data.items || []; this.maps = data.maps || { 1: [], 2: [] }; } else { this.migrate(); } } catch (e) { this.migrate(); } this.setDefaultActiveMap(); },
                 migrate() { /* Migration logic omitted */ },
                 
